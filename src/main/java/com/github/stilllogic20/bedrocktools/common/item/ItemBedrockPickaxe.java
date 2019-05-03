@@ -1,9 +1,15 @@
 package com.github.stilllogic20.bedrocktools.common.item;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+
+import javax.annotation.Nonnull;
 
 import com.github.stilllogic20.bedrocktools.BedrockToolsMod;
 import com.github.stilllogic20.bedrocktools.common.BedrockToolsMaterial;
+import com.github.stilllogic20.bedrocktools.common.util.BlockFinder;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -25,12 +31,15 @@ import net.minecraft.util.text.TextFormatting;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+import net.minecraftforge.oredict.OreDictionary;
 
 public class ItemBedrockPickaxe extends ItemPickaxe {
 
     private static final float ATTACK_DAMAGE = 22F;
     private static final String NAME = "bedrock_pickaxe";
     private static final String MODE_KEY = "bedrocktools.pickaxe_mode";
+    private static final String MINING_MODE_KEY = "efficiency";
+    private static final String VEIN_MODE_KEY = "vein";
 
     static enum MiningMode {
         NORMAL(20F),
@@ -57,22 +66,23 @@ public class ItemBedrockPickaxe extends ItemPickaxe {
         NORMAL(10F),
         MORE(20F),
         INSANE(Float.MAX_VALUE),
+        ALL(20F),
         OFF(0F);
 
         private final float range;
 
         private VeinMode(float range) {
             this.range = range;
-      }
+        }
 
-      public VeinMode next() {
-        final VeinMode[] values = values();
-        return values[(ordinal() + 1) % values.length];
-      }
+        public VeinMode next() {
+            final VeinMode[] values = values();
+            return values[(ordinal() + 1) % values.length];
+        }
 
-      public float getRange(){
-          return range;
-      }
+        public float getRange() {
+            return range;
+        }
 
     }
 
@@ -85,23 +95,31 @@ public class ItemBedrockPickaxe extends ItemPickaxe {
         return item.getTagCompound().getCompoundTag(MODE_KEY);
     }
 
-    public MiningMode getMiningMode(ItemStack item) {
-        return hasTag(item) ? MiningMode.values()[getTag(item).getInteger("efficiency")] : MiningMode.NORMAL;
-    }
-
-    public VeinMode getVeinMode(ItemStack item) {
-        return hasTag(item) ? VeinMode.values()[getTag(item).getInteger("vein")] : VeinMode.NORMAL;
-    }
-
-    public void setMode(ItemStack item, MiningMode miningMode, VeinMode veinMode) {
+    private static void initTags(ItemStack item) {
         if (item.getTagCompound() == null)
             item.setTagCompound(new NBTTagCompound());
         if (!item.getTagCompound().hasKey(MODE_KEY))
             item.getTagCompound().setTag(MODE_KEY, new NBTTagCompound());
-        if (!item.getTagCompound().hasKey("efficiency") && miningMode != null)
-            getTag(item).setInteger("efficiency", miningMode.ordinal());
-        if (!item.getTagCompound().hasKey("vein") && veinMode != null)
-            getTag(item).setInteger("vein", veinMode.ordinal());
+    }
+
+    public MiningMode getMiningMode(@Nonnull ItemStack item) {
+        return hasTag(item) ? MiningMode.values()[getTag(item).getInteger(MINING_MODE_KEY)] : MiningMode.NORMAL;
+    }
+
+    public VeinMode getVeinMode(@Nonnull ItemStack item) {
+        return hasTag(item) ? VeinMode.values()[getTag(item).getInteger(VEIN_MODE_KEY)] : VeinMode.NORMAL;
+    }
+
+    public void setMiningMode(@Nonnull ItemStack item, @Nonnull MiningMode miningMode) {
+        initTags(item);
+        if (!item.getTagCompound().hasKey(MINING_MODE_KEY))
+            getTag(item).setInteger(MINING_MODE_KEY, miningMode.ordinal());
+    }
+
+    public void setVeinMode(@Nonnull ItemStack item, @Nonnull VeinMode veinMode) {
+        initTags(item);
+        if (!item.getTagCompound().hasKey(VEIN_MODE_KEY))
+            getTag(item).setInteger(VEIN_MODE_KEY, veinMode.ordinal());
     }
 
     public ItemBedrockPickaxe() {
@@ -116,23 +134,25 @@ public class ItemBedrockPickaxe extends ItemPickaxe {
     public void addInformation(ItemStack stack, World world, List<String> tooltip, ITooltipFlag flag) {
         super.addInformation(stack, world, tooltip, flag);
 
-      MiningMode efficiencyMode = getMiningMode(stack);
+        MiningMode efficiencyMode = getMiningMode(stack);
         VeinMode veinMode = getVeinMode(stack);
         tooltip.add(
                 String.format("%s: %s%s",
                         net.minecraft.client.resources.I18n.format("bedrocktools.item.tooltip.miningmode"),
                         TextFormatting.BLUE,
-                        net.minecraft.client.resources.I18n.format("bedrocktools.mode." + efficiencyMode.name().toLowerCase())));
+                        net.minecraft.client.resources.I18n
+                                .format("bedrocktools.mode." + efficiencyMode.name().toLowerCase())));
         tooltip.add(
                 String.format("%s: %s%.0f",
                         net.minecraft.client.resources.I18n.format("bedrocktools.item.tooltip.efficiency"),
                         TextFormatting.BLUE,
                         efficiencyMode.efficiency));
         tooltip.add(
-               String.format("%s: %s%s",
+                String.format("%s: %s%s",
                         net.minecraft.client.resources.I18n.format("bedrocktools.item.tooltip.veinmode"),
                         TextFormatting.BLUE,
-                        net.minecraft.client.resources.I18n.format("bedrocktools.mode." + veinMode.name().toLowerCase())));
+                        net.minecraft.client.resources.I18n
+                                .format("bedrocktools.mode." + veinMode.name().toLowerCase())));
 
     }
 
@@ -167,8 +187,8 @@ public class ItemBedrockPickaxe extends ItemPickaxe {
 
         ItemStack item = player.getHeldItem(hand);
         if (player.isSneaking()) {
-          MiningMode mode = getMiningMode(item).next();
-            setMode(item, mode, null);
+            MiningMode mode = getMiningMode(item).next();
+            setMiningMode(item, mode);
 
             player.sendMessage(new TextComponentString(
                     String.format("[BedrockTools] %s: %s%s(%.0f)",
@@ -201,6 +221,44 @@ public class ItemBedrockPickaxe extends ItemPickaxe {
             }
         }
         return super.onItemUse(player, world, pos, hand, facing, hitX, hitY, hitZ);
+    }
+
+    @Override
+    public boolean onBlockStartBreak(ItemStack stack, BlockPos pos, EntityPlayer player) {
+        World world = player.world;
+        if (world.isRemote)
+            return super.onBlockStartBreak(stack, pos, player);
+        IBlockState state = world.getBlockState(pos);
+        if (getVeinMode(stack) == VeinMode.ALL) {
+            Block block = state.getBlock();
+            if (Arrays.stream(OreDictionary.getOreIDs(new ItemStack(block)))
+                    .mapToObj(OreDictionary::getOreName)
+                    .peek(System.out::println)
+                    .anyMatch(name -> name.startsWith("ore")
+                            || name.equals("logWood")
+                            || name.equals("treeLeaves"))) {
+                Set<BlockPos> found = new BlockFinder(block).find(128, world, pos);
+                found
+                        .stream()
+                        .filter(p -> !Objects.equals(p, pos))
+                        .forEach(p -> {
+                            IBlockState s = world.getBlockState(p);
+                            Block b = s.getBlock();
+                            b.onBlockHarvested(world, p, state, player);
+                            world.playEvent(null, 2001, p, Block.getStateId(state));
+                            world.setBlockToAir(p);
+                            b.breakBlock(world, p, state);
+                            b.dropBlockAsItem(world, p, state, 0);
+                        });
+            }
+        }
+        return super.onBlockStartBreak(stack, pos, player);
+    }
+
+    @Override
+    public boolean onBlockDestroyed(ItemStack stack, World world, IBlockState state, BlockPos pos,
+            EntityLivingBase entity) {
+        return super.onBlockDestroyed(stack, world, state, pos, entity);
     }
 
     @Override
